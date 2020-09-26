@@ -21,13 +21,13 @@
 #define INPUT_TERMINAL_ID		1
 #define OUTPUT_TERMINAL_ID		2
 
-#define FORMAT_INDEX_UNCOMPRESSED_NV12	1
+#define FORMAT_INDEX_UNCOMPRESSED_YUY2	1
 
 /*
  * Helper macros
  */
 
-#define VIDEO_FRAME_SIZE_NV12(w, h)		(((w) * (h) * 3) / 2)
+#define VIDEO_FRAME_SIZE_YUY2(w, h)		((w) * (h) * 2)
 
 #define FRAME_BITRATE(w, h, bpp, interval)	(((w) * (h) * (bpp)) / ((interval) * 100 * 1E-9))
 #define FPS_TO_INTERVAL(fps)			((1E9 / 100) / (fps))
@@ -88,9 +88,9 @@ DECLARE_UVC_FRAME_UNCOMPRESSED(2);
 
 static struct __attribute__((packed)) {
 	struct UVC_INPUT_HEADER_DESCRIPTOR(1, 1) input_header_descriptor;
-	struct uvc_format_uncompressed format_uncompressed_nv12;
-	struct UVC_FRAME_UNCOMPRESSED(2) frames_uncompressed_nv12[1];
-	struct uvc_color_matching_descriptor format_uncompressed_nv12_color_matching;
+	struct uvc_format_uncompressed format_uncompressed_yuy2;
+	struct UVC_FRAME_UNCOMPRESSED(2) frames_uncompressed_yuy2[1];
+	struct uvc_color_matching_descriptor format_uncompressed_yuy2_color_matching;
 } video_streaming_descriptors = {
 	.input_header_descriptor = {
 		.bLength			= sizeof(video_streaming_descriptors.input_header_descriptor),
@@ -107,21 +107,21 @@ static struct __attribute__((packed)) {
 		.bControlSize			= 1,
 		.bmaControls			= {{0}, },
 	},
-	.format_uncompressed_nv12 = {
-		.bLength			= sizeof(video_streaming_descriptors.format_uncompressed_nv12),
+	.format_uncompressed_yuy2 = {
+		.bLength			= sizeof(video_streaming_descriptors.format_uncompressed_yuy2),
 		.bDescriptorType		= USB_DT_CS_INTERFACE,
 		.bDescriptorSubType		= UVC_VS_FORMAT_UNCOMPRESSED,
-		.bFormatIndex			= FORMAT_INDEX_UNCOMPRESSED_NV12,
+		.bFormatIndex			= FORMAT_INDEX_UNCOMPRESSED_YUY2,
 		.bNumFrameDescriptors		= 1,
-		.guidFormat			= UVC_GUID_FORMAT_NV12,
-		.bBitsPerPixel			= 12,
+		.guidFormat			= UVC_GUID_FORMAT_YUY2,
+		.bBitsPerPixel			= 16,
 		.bDefaultFrameIndex		= 1,
 		.bAspectRatioX			= 0,
 		.bAspectRatioY			= 0,
 		.bmInterfaceFlags		= 0,
 		.bCopyProtect			= 0,
 	},
-	.frames_uncompressed_nv12 = {
+	.frames_uncompressed_yuy2 = {
 		(struct UVC_FRAME_UNCOMPRESSED(2)){
 			.bLength			= UVC_DT_FRAME_UNCOMPRESSED_SIZE(2),
 			.bDescriptorType		= USB_DT_CS_INTERFACE,
@@ -132,14 +132,14 @@ static struct __attribute__((packed)) {
 			.wHeight			= 272,
 			.dwMinBitRate			= FRAME_BITRATE(480, 272, 12, FPS_TO_INTERVAL(30)),
 			.dwMaxBitRate			= FRAME_BITRATE(480, 272, 12, FPS_TO_INTERVAL(60)),
-			.dwMaxVideoFrameBufferSize	= VIDEO_FRAME_SIZE_NV12(480, 272),
+			.dwMaxVideoFrameBufferSize	= VIDEO_FRAME_SIZE_YUY2(480, 272),
 			.dwDefaultFrameInterval		= FPS_TO_INTERVAL(60),
 			.bFrameIntervalType		= 2,
 			.dwFrameInterval		= {FPS_TO_INTERVAL(60), FPS_TO_INTERVAL(30)},
 		},
 	},
-	.format_uncompressed_nv12_color_matching = {
-		.bLength			= sizeof(video_streaming_descriptors.format_uncompressed_nv12_color_matching),
+	.format_uncompressed_yuy2_color_matching = {
+		.bLength			= sizeof(video_streaming_descriptors.format_uncompressed_yuy2_color_matching),
 		.bDescriptorType		= USB_DT_CS_INTERFACE,
 		.bDescriptorSubType		= UVC_VS_COLORFORMAT,
 		.bColorPrimaries		= 0,

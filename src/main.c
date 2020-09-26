@@ -17,7 +17,7 @@
 PSP_MODULE_INFO("UVC", PSP_MODULE_KERNEL, 1, 1);
 PSP_MAIN_THREAD_ATTR(0);
 
-#define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_NV12(480, 272)
+#define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_YUY2(480, 272)
 
 #define UVC_PAYLOAD_HEADER_SIZE		12
 #define UVC_PAYLOAD_SIZE(frame_size)	(UVC_PAYLOAD_HEADER_SIZE + (frame_size))
@@ -30,7 +30,7 @@ struct uvc_frame {
 
 static const struct uvc_streaming_control uvc_probe_control_setting_default = {
 	.bmHint				= 0,
-	.bFormatIndex			= FORMAT_INDEX_UNCOMPRESSED_NV12,
+	.bFormatIndex			= FORMAT_INDEX_UNCOMPRESSED_YUY2,
 	.bFrameIndex			= 1,
 	.dwFrameInterval		= FPS_TO_INTERVAL(60),
 	.wKeyFrameRate			= 0,
@@ -126,35 +126,6 @@ static int uvc_frame_req_fini(void)
 static void uvc_frame_req_submit_phycont_on_complete(struct UsbbdDeviceRequest *req)
 {
 	sceKernelSetEventFlag(uvc_frame_req_evflag, 1);
-}
-
-static int uvc_frame_req_submit_phycont(const void *data, unsigned int size)
-{
-	static struct UsbbdDeviceRequest req;
-	int ret;
-
-	req = (struct UsbbdDeviceRequest){
-		.endpoint = &endpoints[1],
-		.data = (void *)data,
-		//.attributes = SCE_UDCD_DEVICE_REQUEST_ATTR_PHYCONT,
-		.size = size,
-		.isControlRequest = 0,
-		.onComplete = uvc_frame_req_submit_phycont_on_complete,
-		.transmitted = 0,
-		.returnCode = 0,
-		.next = NULL,
-		.unused = NULL,
-		.physicalAddress = NULL
-	};
-
-	ret = sceUsbbdReqSend(&req);
-	if (ret < 0)
-		return ret;
-
-	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, 1, PSP_EVENT_WAITOR |
-					PSP_EVENT_WAITCLEAR, NULL, NULL);
-
-	return ret;
 }
 
 static void uvc_handle_video_streaming_req_recv(const struct DeviceRequest *req)
@@ -457,29 +428,49 @@ static unsigned int uvc_frame_transfer(struct uvc_frame *frame,
 }
 #endif
 
-int convert_and_send_frame_nv12(int fid, void *addr, int bufferwidth)
+#define CLIP(x) ((x) > 255 ? 255 : ((x) < 0 ? 0 : x))
+#define AVERAGE(a, b) (((a) / 2) + ((b) / 2) + ((a) & (b) & 1))
+
+#define RGB2Y(R, G, B) CLIP(( (  66 * (R) + 129 * (G) +  25 * (B) + 128) >> 8) +  16)
+#define RGB2U(R, G, B) CLIP(( ( -38 * (R) -  74 * (G) + 112 * (B) + 128) >> 8) + 128)
+#define RGB2V(R, G, B) CLIP(( ( 112 * (R) -  94 * (G) -  18 * (B) + 128) >> 8) + 128)
+
+static void r8g8b8a8_to_yuy2(const unsigned char *rgb, unsigned char *yuy2, int in_stride, int width, int height)
 {
-	static struct UsbbdDeviceRequest req[2];
-	unsigned char header[64] __attribute__((aligned(64)));
+	int i, j;
+
+	for (i = 0; i < height; i++) {
+		for (j = 0; j < width; j+=2) {
+			const unsigned char *rgbap = &rgb[4 * (j + i * in_stride)];
+			unsigned char *yuy2p = &yuy2[2 * (j + i * width)];
+
+			unsigned char sub_r = AVERAGE(rgbap[0 + 0], rgbap[4 + 0]);
+			unsigned char sub_g = AVERAGE(rgbap[0 + 1], rgbap[4 + 1]);
+			unsigned char sub_b = AVERAGE(rgbap[0 + 2], rgbap[4 + 2]);
+			unsigned char y0 = RGB2Y(rgbap[0 + 0], rgbap[0 + 1], rgbap[0 + 2]);
+			unsigned char y1 = RGB2Y(rgbap[4 + 0], rgbap[4 + 1], rgbap[4 + 2]);
+			unsigned char u = RGB2U(sub_r, sub_g, sub_b);
+			unsigned char v = RGB2V(sub_r, sub_g, sub_b);
+
+			yuy2p[0] = y0;
+			yuy2p[1] = u;
+			yuy2p[2] = y1;
+			yuy2p[3] = v;
+		}
+	}
+}
+
+int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixelformat)
+{
+	static unsigned char tx_buf[MAX_UVC_PAYLOAD_TRANSFER_SIZE] __attribute__((aligned(64)));
+	static struct UsbbdDeviceRequest req;
 	static const int eof = 1;
 	int ret;
 
-	req[0] = (struct UsbbdDeviceRequest){
+	req = (struct UsbbdDeviceRequest){
 		.endpoint = &endpoints[1],
-		.data = (void *)header,
-		.size = UVC_PAYLOAD_HEADER_SIZE,
-		.isControlRequest = 0,
-		.onComplete = NULL,
-		.transmitted = 0,
-		.returnCode = 0,
-		.next = &req[1],
-		.unused = NULL,
-		.physicalAddress = &req[1]
-	};
-	req[1] = (struct UsbbdDeviceRequest){
-		.endpoint = &endpoints[1],
-		.data = (void *)addr,
-		.size = MAX_UVC_VIDEO_FRAME_SIZE,
+		.data = tx_buf,
+		.size = sizeof(tx_buf),
 		.isControlRequest = 0,
 		.onComplete = uvc_frame_req_submit_phycont_on_complete,
 		.transmitted = 0,
@@ -489,55 +480,56 @@ int convert_and_send_frame_nv12(int fid, void *addr, int bufferwidth)
 		.physicalAddress = NULL
 	};
 
-	memset(header, 0, sizeof(header));
-	header[0] = UVC_PAYLOAD_HEADER_SIZE;
-	header[1] = UVC_STREAM_EOH;
+	tx_buf[0] = UVC_PAYLOAD_HEADER_SIZE;
+	tx_buf[1] = UVC_STREAM_EOH;
 	if (fid)
-		header[1] |= UVC_STREAM_FID;
+		tx_buf[1] |= UVC_STREAM_FID;
 	if (eof)
-		header[1] |= UVC_STREAM_EOF;
+		tx_buf[1] |= UVC_STREAM_EOF;
 
-	sceKernelDcacheWritebackRange(header, sizeof(header));
+	if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_8888)
+		r8g8b8a8_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
+	//else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_4444)
+	//	r4g4b4a4_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
+
+	sceKernelDcacheWritebackRange(tx_buf, sizeof(tx_buf));
 
 	LOG("Sending frame...\n");
 
-	ret = sceUsbbdReqSend(&req[0]);
+	ret = sceUsbbdReqSend(&req);
 	if (ret < 0)
 		return ret;
-
-	LOG("Waiting...\n");
 
 	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, 1, PSP_EVENT_WAITOR |
 					PSP_EVENT_WAITCLEAR, NULL, NULL);
 
-	LOG("Frame send completed!\n");
+	LOG("Frame sent!\n");
 
 	return ret;
 }
-
 
 static int send_frame(void)
 {
 	static int fid = 0;
 
 	int ret;
-	void *topaddr;
-	int bufferwidth;
-	int pixelformat;
-	ret = sceDisplayGetFrameBuf(&topaddr, &bufferwidth, &pixelformat, PSP_DISPLAY_SETBUF_IMMEDIATE);
+	void *fbaddr;
+	int fbstride;
+	int fbpixelformat;
+	ret = sceDisplayGetFrameBuf(&fbaddr, &fbstride, &fbpixelformat, PSP_DISPLAY_SETBUF_IMMEDIATE);
 
-	LOG("FB addr: %p, bufferwidth: %d, pxlfmt: %d\n", topaddr, bufferwidth, pixelformat);
+	LOG("FB addr: %p, stride: %d, pxlfmt: %d\n", fbaddr, fbstride, fbpixelformat);
 
 	switch (uvc_probe_control_setting.bFormatIndex) {
-	case FORMAT_INDEX_UNCOMPRESSED_NV12: {
-		const struct UVC_FRAME_UNCOMPRESSED(2) *frames =
-			video_streaming_descriptors.frames_uncompressed_nv12;
-		int dst_width = frames[uvc_probe_control_setting.bFrameIndex - 1].wWidth;
-		int dst_height = frames[uvc_probe_control_setting.bFrameIndex - 1].wHeight;
+	case FORMAT_INDEX_UNCOMPRESSED_YUY2: {
+		//const struct UVC_FRAME_UNCOMPRESSED(2) *frames =
+		//	video_streaming_descriptors.frames_uncompressed_yuy2;
+		//int dst_width = frames[uvc_probe_control_setting.bFrameIndex - 1].wWidth;
+		//int dst_height = frames[uvc_probe_control_setting.bFrameIndex - 1].wHeight;
 
-		ret = convert_and_send_frame_nv12(fid, topaddr, bufferwidth);
+		ret = convert_and_send_frame_yuy2(fid, fbaddr, fbstride, fbpixelformat);
 		if (ret < 0) {
-			LOG("Error sending NV12 frame: 0x%08X\n", ret);
+			LOG("Error sending YUY2 frame: 0x%08X\n", ret);
 			return ret;
 		}
 
