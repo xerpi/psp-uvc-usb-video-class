@@ -1,7 +1,7 @@
 TARGET = uvc
-OBJS = main.o utils.o
+OBJS = src/main.o src/utils.o
 
-INCDIR =
+INCDIR = include
 CFLAGS = -G0 -Wall -O2
 CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti
 ASFLAGS = $(CFLAGS)
