@@ -152,7 +152,7 @@ static struct __attribute__((packed)) {
 static
 struct SceUdcdEndpoint endpoints[2] = {
 	{USB_ENDPOINT_OUT, 0, 0},
-	{USB_ENDPOINT_IN, 1, 0},
+	{USB_ENDPOINT_OUT, 1, 0},
 };
 
 /* Interface */
@@ -206,7 +206,7 @@ struct SceUdcdEndpointDescriptor endpdesc_hi[2] = {
 	{
 		USB_DT_ENDPOINT_SIZE,
 		USB_DT_ENDPOINT,
-		USB_ENDPOINT_IN | 0x01,		/* bEndpointAddress */
+		USB_ENDPOINT_OUT | 0x01,	/* bEndpointAddress */
 		USB_ENDPOINT_TYPE_BULK,		/* bmAttributes */
 		0x200,				/* wMaxPacketSize */
 		0x00				/* bInterval */

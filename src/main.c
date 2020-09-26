@@ -19,7 +19,7 @@ PSP_MAIN_THREAD_ATTR(0);
 
 #define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_NV12(480, 272)
 
-#define UVC_PAYLOAD_HEADER_SIZE		16
+#define UVC_PAYLOAD_HEADER_SIZE		12
 #define UVC_PAYLOAD_SIZE(frame_size)	(UVC_PAYLOAD_HEADER_SIZE + (frame_size))
 #define MAX_UVC_PAYLOAD_TRANSFER_SIZE	UVC_PAYLOAD_SIZE(MAX_UVC_VIDEO_FRAME_SIZE)
 
@@ -52,7 +52,7 @@ static struct uvc_streaming_control uvc_probe_control_setting;
 static struct {
 	unsigned char buffer[64];
 	struct DeviceRequest ep0_req;
-} pending_recv;
+} __attribute__((aligned(64))) pending_recv;
 
 //static SceUID uvc_thread_id;
 //static SceUID uvc_event_flag_id;
@@ -103,9 +103,9 @@ static int usb_ep0_enqueue_recv_for_req(const struct DeviceRequest *ep0_req)
 		.physicalAddress = NULL
 	};
 
-	sceKernelDcacheWritebackRange(pending_recv.buffer, pending_recv.ep0_req.wLength);
+	sceKernelDcacheInvalidateRange(pending_recv.buffer, pending_recv.ep0_req.wLength);
 
-	return sceUsbbdReqSend(&req);
+	return sceUsbbdReqRecv(&req);
 }
 
 static int uvc_frame_req_init(void)
@@ -391,6 +391,7 @@ static int usb_attach(int usb_version)
 static void usb_detach(void)
 {
 	LOG("usb_detach\n");
+	uvc_handle_video_abort();
 }
 
 static void usb_configure(int usb_version, int desc_count, struct InterfaceSettings *settings)
@@ -407,6 +408,7 @@ static int usb_driver_start(int size, void *args)
 static int usb_driver_stop(int size, void *args)
 {
 	LOG("usb_driver_stop\n");
+	uvc_handle_video_abort();
 	return 0;
 }
 
@@ -472,7 +474,7 @@ int convert_and_send_frame_nv12(int fid, void *addr, int bufferwidth)
 		.returnCode = 0,
 		.next = &req[1],
 		.unused = NULL,
-		.physicalAddress = NULL
+		.physicalAddress = &req[1]
 	};
 	req[1] = (struct UsbbdDeviceRequest){
 		.endpoint = &endpoints[1],
@@ -503,8 +505,12 @@ int convert_and_send_frame_nv12(int fid, void *addr, int bufferwidth)
 	if (ret < 0)
 		return ret;
 
+	LOG("Waiting...\n");
+
 	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, 1, PSP_EVENT_WAITOR |
 					PSP_EVENT_WAITCLEAR, NULL, NULL);
+
+	LOG("Frame send completed!\n");
 
 	return ret;
 }
@@ -602,7 +608,6 @@ int main(int argc, char *argv[])
 
 	LOG("Exiting!\n");
 
-	stream = 0;
 	uvc_handle_video_abort();
 	uvc_frame_req_fini();
 
