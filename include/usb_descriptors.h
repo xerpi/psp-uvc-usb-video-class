@@ -151,8 +151,8 @@ static struct __attribute__((packed)) {
 /* Endpoint blocks */
 static
 struct SceUdcdEndpoint endpoints[2] = {
-	{USB_ENDPOINT_OUT, 0, 0},
-	{USB_ENDPOINT_IN,  1, 0},
+	{0, 0, 0},
+	{1, 0, 0},
 };
 
 /* Interface */
