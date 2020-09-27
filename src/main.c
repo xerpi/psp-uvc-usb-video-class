@@ -417,6 +417,7 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 	static struct UsbbdDeviceRequest req;
 	static const int eof = 1;
 	unsigned int event;
+	unsigned int t0, t1, t2, t3;
 	int ret;
 
 	req = (struct UsbbdDeviceRequest){
@@ -439,18 +440,24 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 	if (eof)
 		tx_buf[1] |= UVC_STREAM_EOF;
 
+	t0 = sceKernelGetSystemTimeLow();
+
 	if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_8888)
 		r8g8b8a8_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
 	else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_565)
 		r5g6b5_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
 	else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_5551)
 		r5g5b5a1_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
-	//else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_4444)
-	//	r4g4b4a4_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
+	else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_4444)
+		r4g4b4a4_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
 
 	sceKernelDcacheWritebackRange(tx_buf, sizeof(tx_buf));
 
+	t1 = sceKernelGetSystemTimeLow();
+
 	LOG("Sending frame...\n");
+
+	t2 = sceKernelGetSystemTimeLow();
 
 	ret = sceUsbbdReqSend(&req);
 	if (ret < 0)
@@ -459,10 +466,14 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, EVENT_STOP_STREAM | EVENT_FRAME_SENT,
 	                               PSP_EVENT_WAITOR | PSP_EVENT_WAITCLEAR, &event, NULL);
 
+	t3 = sceKernelGetSystemTimeLow();
+
 	if (event & EVENT_STOP_STREAM)
 		LOG("Received stream stop!\n");
 	else if (event & EVENT_FRAME_SENT)
 		LOG("Frame sent!\n");
+
+	LOG("CSC: %dus, USB send: %dus\n", t1 - t0, t3 - t2);
 
 	return ret;
 }
@@ -494,7 +505,7 @@ static int send_frame(void)
 	void *fbaddr;
 	int fbwidth;
 	int fbstride;
-	int fbpixelformat;
+	int fbpixelformat = 0;
 
 	//fbwidth = 480;
 	//ret = sceDisplayGetFrameBuf(&fbaddr, &fbstride, &fbpixelformat, PSP_DISPLAY_SETBUF_IMMEDIATE);

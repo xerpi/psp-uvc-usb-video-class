@@ -127,3 +127,39 @@ void r5g5b5a1_to_yuy2(const unsigned char *rgba, unsigned char *yuy2, int in_str
 		}
 	}
 }
+
+void r4g4b4a4_to_yuy2(const unsigned char *rgba, unsigned char *yuy2, int in_stride, int width, int height)
+{
+	int i, j;
+
+	for (i = 0; i < height; i++) {
+		for (j = 0; j < width; j+=2) {
+			const unsigned short *rgbap = (unsigned short *)&rgba[2 * (j + i * in_stride)];
+			unsigned char *yuy2p = &yuy2[2 * (j + i * width)];
+
+			unsigned short p0 = rgbap[0];
+			unsigned short p1 = rgbap[1];
+
+			unsigned char p0_r = (p0 & 0xF) << 4,
+			              p0_g = ((p0 >> 4) & 0xF) << 4,
+			              p0_b = ((p0 >> 8) & 0xF) << 4;
+
+			unsigned char p1_r = (p1 & 0xF) << 4,
+			              p1_g = ((p1 >> 4) & 0xF) << 4,
+			              p1_b = ((p1 >> 8) & 0xF) << 4;
+
+			unsigned char sub_r = AVERAGE(p0_r, p1_r);
+			unsigned char sub_g = AVERAGE(p0_g, p1_g);
+			unsigned char sub_b = AVERAGE(p0_b, p1_b);
+			unsigned char y0 = RGB2Y(p0_r, p0_g, p0_b);
+			unsigned char y1 = RGB2Y(p1_r, p1_g, p1_b);
+			unsigned char u = RGB2U(sub_r, sub_g, sub_b);
+			unsigned char v = RGB2V(sub_r, sub_g, sub_b);
+
+			yuy2p[0] = y0;
+			yuy2p[1] = u;
+			yuy2p[2] = y1;
+			yuy2p[3] = v;
+		}
+	}
+}
