@@ -1,5 +1,5 @@
 TARGET = uvc
-OBJS = src/main.o src/utils.o
+OBJS = src/main.o src/utils.o src/format_conversion.o
 
 INCDIR = include
 CFLAGS = -G0 -Wall -O2
@@ -21,5 +21,10 @@ include $(PSPSDK)/lib/build.mak
 copy: EBOOT.PBP
 	@mkdir -p $(PSP_MS)/PSP/GAME/$(TARGET)
 	@cp EBOOT.PBP $(PSP_MS)/PSP/GAME/$(TARGET)
+	@sync
+	@echo "Copied!"
+
+copyprx: $(TARGET).prx
+	@cp $^ $(PSP_MS)/seplugins/
 	@sync
 	@echo "Copied!"

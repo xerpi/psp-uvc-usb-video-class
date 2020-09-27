@@ -1,27 +1,35 @@
+#include <string.h>
 #include <pspkernel.h>
 #include <pspdebug.h>
 #include <pspdisplay.h>
 #include <pspctrl.h>
-//#include <pspusb.h>
-//#include <pspusbbus.h>
 #include "usb.h"
-#include <string.h>
 #include "usb_descriptors.h"
 #include "utils.h"
+#include "format_conversion.h"
 
-#define LOG printf
+#define ENABLE_LOGGING 1
 
-#define USB_DRIVERNAME "UVC"
-#define USB_PRODUCT_ID 0x1337
+#if ENABLE_LOGGING == 1
+#define LOG(...) printf(__VA_ARGS__)
+#else
+#define LOG(...) (void)0
+#endif
 
 PSP_MODULE_INFO("UVC", PSP_MODULE_KERNEL, 1, 1);
 PSP_MAIN_THREAD_ATTR(0);
+
+#define USB_DRIVERNAME "UVC"
+#define USB_PRODUCT_ID 0x1337
 
 #define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_YUY2(480, 272)
 
 #define UVC_PAYLOAD_HEADER_SIZE		12
 #define UVC_PAYLOAD_SIZE(frame_size)	(UVC_PAYLOAD_HEADER_SIZE + (frame_size))
 #define MAX_UVC_PAYLOAD_TRANSFER_SIZE	UVC_PAYLOAD_SIZE(MAX_UVC_VIDEO_FRAME_SIZE)
+
+#define EVENT_STOP_STREAM	(1u << 0)
+#define EVENT_FRAME_SENT	(1u << 1)
 
 struct uvc_frame {
 	unsigned char header[UVC_PAYLOAD_HEADER_SIZE];
@@ -59,6 +67,7 @@ static struct {
 //static int uvc_thread_run;
 static int stream;
 static SceUID uvc_frame_req_evflag;
+static unsigned char tx_buf[MAX_UVC_PAYLOAD_TRANSFER_SIZE] __attribute__((aligned(64)));
 
 static int usb_ep0_req_send(const void *data, unsigned int size)
 {
@@ -121,11 +130,6 @@ static int uvc_frame_req_init(void)
 static int uvc_frame_req_fini(void)
 {
 	return sceKernelDeleteEventFlag(uvc_frame_req_evflag);
-}
-
-static void uvc_frame_req_submit_phycont_on_complete(struct UsbbdDeviceRequest *req)
-{
-	sceKernelSetEventFlag(uvc_frame_req_evflag, 1);
 }
 
 static void uvc_handle_video_streaming_req_recv(const struct DeviceRequest *req)
@@ -403,68 +407,16 @@ static struct UsbDriver usb_driver = {
 	.link				= NULL
 };
 
-#if 0
-static unsigned int uvc_frame_transfer(struct uvc_frame *frame,
-				       unsigned int frame_size,
-				       int fid, int eof)
+static void uvc_frame_send_req_on_complete(struct UsbbdDeviceRequest *req)
 {
-	int ret;
-
-	frame->header[0] = UVC_PAYLOAD_HEADER_SIZE;
-	frame->header[1] = UVC_STREAM_EOH;
-
-	if (fid)
-		frame->header[1] |= UVC_STREAM_FID;
-	if (eof)
-		frame->header[1] |= UVC_STREAM_EOF;
-
-	ret = uvc_frame_req_submit_phycont(frame, frame_size);
-	if (ret < 0) {
-		LOG("Error sending frame: 0x%08X\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-#endif
-
-#define CLIP(x) ((x) > 255 ? 255 : ((x) < 0 ? 0 : x))
-#define AVERAGE(a, b) (((a) / 2) + ((b) / 2) + ((a) & (b) & 1))
-
-#define RGB2Y(R, G, B) CLIP(( (  66 * (R) + 129 * (G) +  25 * (B) + 128) >> 8) +  16)
-#define RGB2U(R, G, B) CLIP(( ( -38 * (R) -  74 * (G) + 112 * (B) + 128) >> 8) + 128)
-#define RGB2V(R, G, B) CLIP(( ( 112 * (R) -  94 * (G) -  18 * (B) + 128) >> 8) + 128)
-
-static void r8g8b8a8_to_yuy2(const unsigned char *rgb, unsigned char *yuy2, int in_stride, int width, int height)
-{
-	int i, j;
-
-	for (i = 0; i < height; i++) {
-		for (j = 0; j < width; j+=2) {
-			const unsigned char *rgbap = &rgb[4 * (j + i * in_stride)];
-			unsigned char *yuy2p = &yuy2[2 * (j + i * width)];
-
-			unsigned char sub_r = AVERAGE(rgbap[0 + 0], rgbap[4 + 0]);
-			unsigned char sub_g = AVERAGE(rgbap[0 + 1], rgbap[4 + 1]);
-			unsigned char sub_b = AVERAGE(rgbap[0 + 2], rgbap[4 + 2]);
-			unsigned char y0 = RGB2Y(rgbap[0 + 0], rgbap[0 + 1], rgbap[0 + 2]);
-			unsigned char y1 = RGB2Y(rgbap[4 + 0], rgbap[4 + 1], rgbap[4 + 2]);
-			unsigned char u = RGB2U(sub_r, sub_g, sub_b);
-			unsigned char v = RGB2V(sub_r, sub_g, sub_b);
-
-			yuy2p[0] = y0;
-			yuy2p[1] = u;
-			yuy2p[2] = y1;
-			yuy2p[3] = v;
-		}
-	}
+	sceKernelSetEventFlag(uvc_frame_req_evflag, EVENT_FRAME_SENT);
 }
 
 int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixelformat)
 {
-	static unsigned char tx_buf[MAX_UVC_PAYLOAD_TRANSFER_SIZE] __attribute__((aligned(64)));
 	static struct UsbbdDeviceRequest req;
 	static const int eof = 1;
+	unsigned int event;
 	int ret;
 
 	req = (struct UsbbdDeviceRequest){
@@ -472,7 +424,7 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 		.data = tx_buf,
 		.size = sizeof(tx_buf),
 		.isControlRequest = 0,
-		.onComplete = uvc_frame_req_submit_phycont_on_complete,
+		.onComplete = uvc_frame_send_req_on_complete,
 		.transmitted = 0,
 		.returnCode = 0,
 		.next = NULL,
@@ -500,10 +452,13 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 	if (ret < 0)
 		return ret;
 
-	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, 1, PSP_EVENT_WAITOR |
-					PSP_EVENT_WAITCLEAR, NULL, NULL);
+	ret = sceKernelWaitEventFlagCB(uvc_frame_req_evflag, EVENT_STOP_STREAM | EVENT_FRAME_SENT,
+	                               PSP_EVENT_WAITOR | PSP_EVENT_WAITCLEAR, &event, NULL);
 
-	LOG("Frame sent!\n");
+	if (event & EVENT_STOP_STREAM)
+		LOG("Received stream stop!\n");
+	else if (event & EVENT_FRAME_SENT)
+		LOG("Frame sent!\n");
 
 	return ret;
 }
@@ -549,7 +504,9 @@ static int send_frame(void)
 
 int main(int argc, char *argv[])
 {
+#if ENABLE_LOGGING == 1
 	pspDebugScreenInit();
+#endif
 	SetupCallbacks();
 
 	LOG("UVC. USB Video Class\n");
@@ -584,14 +541,14 @@ int main(int argc, char *argv[])
 	ret = sceUsbActivate(USB_PRODUCT_ID);
 	LOG("returned 0x%08X\n", ret);
 
-	SceCtrlData pad;
-	sceCtrlSetSamplingCycle (0);
-	sceCtrlSetSamplingMode (1);
 	while (run) {
-		sceDisplayWaitVblankStart();
+		SceCtrlData pad;
 		sceCtrlPeekBufferPositive(&pad, 1);
 		if (pad.Buttons & PSP_CTRL_START)
 			run = 0;
+
+		sceDisplayWaitVblankStart();
+
 		if (sceUsbGetState () & PSP_USB_STATUS_CONNECTION_ESTABLISHED) {
 			if (stream)
 				send_frame();
@@ -601,6 +558,7 @@ int main(int argc, char *argv[])
 	LOG("Exiting!\n");
 
 	uvc_handle_video_abort();
+	sceKernelSetEventFlag(uvc_frame_req_evflag, EVENT_STOP_STREAM);
 	uvc_frame_req_fini();
 
 	sceUsbDeactivate(); //USB_PRODUCT_ID??
