@@ -441,6 +441,10 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 
 	if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_8888)
 		r8g8b8a8_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
+	else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_565)
+		r5g6b5_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
+	else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_5551)
+		r5g5b5a1_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
 	//else if (fbpixelformat == PSP_DISPLAY_PIXEL_FORMAT_4444)
 	//	r4g4b4a4_to_yuy2(fbaddr, &tx_buf[UVC_PAYLOAD_HEADER_SIZE], fbstride, 480, 272);
 
@@ -463,17 +467,43 @@ int convert_and_send_frame_yuy2(int fid, void *fbaddr, int fbstride, int fbpixel
 	return ret;
 }
 
+static void get_display_params_lcdc(void **addr, int *pixelformat, int *width, int *stride)
+{
+	int ldcd_pixelfmt;
+
+	*addr = (void *)*(volatile unsigned int *)0xBC800100;
+	ldcd_pixelfmt = *(volatile unsigned int *)0xBC800104;
+	*width = *(volatile unsigned int *)0xBC800108;
+	*stride = *(volatile unsigned int *)0xBC80010C;
+
+	if (ldcd_pixelfmt == 0)
+		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_8888;
+	else if (ldcd_pixelfmt == 1)
+		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_565;
+	else if (ldcd_pixelfmt == 2)
+		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_5551;
+	else if (ldcd_pixelfmt == 3)
+		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_4444;
+}
+
 static int send_frame(void)
 {
 	static int fid = 0;
 
 	int ret;
 	void *fbaddr;
+	int fbwidth;
 	int fbstride;
 	int fbpixelformat;
-	ret = sceDisplayGetFrameBuf(&fbaddr, &fbstride, &fbpixelformat, PSP_DISPLAY_SETBUF_IMMEDIATE);
 
-	LOG("FB addr: %p, stride: %d, pxlfmt: %d\n", fbaddr, fbstride, fbpixelformat);
+	//fbwidth = 480;
+	//ret = sceDisplayGetFrameBuf(&fbaddr, &fbstride, &fbpixelformat, PSP_DISPLAY_SETBUF_IMMEDIATE);
+	//if (ret < 0)
+	//	return ret;
+
+	get_display_params_lcdc(&fbaddr, &fbpixelformat, &fbwidth, &fbstride);
+
+	LOG("FB addr: %p, w: %d, stride: %d, pxlfmt: %d\n", fbaddr, fbwidth, fbstride, fbpixelformat);
 
 	switch (uvc_probe_control_setting.bFormatIndex) {
 	case FORMAT_INDEX_UNCOMPRESSED_YUY2: {
@@ -555,17 +585,21 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	LOG("Exiting!\n");
+	LOG("UVC exiting!!\n");
 
-	uvc_handle_video_abort();
+	//uvc_handle_video_abort();
 	sceKernelSetEventFlag(uvc_frame_req_evflag, EVENT_STOP_STREAM);
 	uvc_frame_req_fini();
 
+	LOG("Deactivating...\n");
 	sceUsbDeactivate(); //USB_PRODUCT_ID??
+	LOG("Stopping " USB_DRIVERNAME "...\n");
 	sceUsbStop(USB_DRIVERNAME, 0, 0 );
+	LOG("Stopping " PSP_USB_BUS_DRIVERNAME "...\n");
 	sceUsbStop(PSP_USB_BUS_DRIVERNAME, 0, 0);
+	LOG("Unregistering USB driver...\n");
 	sceUsbbdUnregister(&usb_driver);
 
-	sceKernelExitGame();
+	LOG("Exiting...\n");
 	return 0;
 }
