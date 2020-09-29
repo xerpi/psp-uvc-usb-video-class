@@ -3,6 +3,7 @@
 #include <pspdebug.h>
 #include <pspdisplay.h>
 #include <pspctrl.h>
+#include "pspdmacplus.h"
 #include "usb.h"
 #include "usb_descriptors.h"
 #include "utils.h"
@@ -23,11 +24,6 @@ PSP_MAIN_THREAD_ATTR(0);
 #define USB_PRODUCT_ID 0x1337
 
 #define EXIT_MASK (PSP_CTRL_START | PSP_CTRL_RTRIGGER)
-
-#define SCE_DMACPLUS_FORMAT_RGBA8888 0
-#define SCE_DMACPLUS_FORMAT_RGB565   1
-#define SCE_DMACPLUS_FORMAT_RGBA5551 2
-#define SCE_DMACPLUS_FORMAT_RGBA4444 3
 
 #define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_YUY2(480, 272)
 
@@ -489,18 +485,16 @@ static void get_display_params_lcdc(void **addr, int *pixelformat, int *width, i
 {
 	int ldcd_pixelfmt;
 
-	*addr = (void *)*(volatile unsigned int *)0xBC800100;
-	ldcd_pixelfmt = *(volatile unsigned int *)0xBC800104;
-	*width = *(volatile unsigned int *)0xBC800108;
-	*stride = *(volatile unsigned int *)0xBC80010C;
+	*addr = (void *)((uintptr_t)sceDmacplusLcdcGetBaseAddr() & ~0x40000000);
+	sceDmacplusLcdcGetFormat(width, stride, &ldcd_pixelfmt);
 
-	if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA8888)
+	if (ldcd_pixelfmt == SCE_DMACPLUS_LCDC_FORMAT_RGBA8888)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_8888;
-	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGB565)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_LCDC_FORMAT_RGB565)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_565;
-	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA5551)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_LCDC_FORMAT_RGBA5551)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_5551;
-	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA4444)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_LCDC_FORMAT_RGBA4444)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_4444;
 }
 

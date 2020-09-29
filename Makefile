@@ -1,5 +1,5 @@
 TARGET = uvc
-OBJS = src/main.o src/utils.o src/format_conversion.o
+OBJS = src/main.o src/utils.o src/format_conversion.o stubs/sceDmacplus_driver.o
 
 INCDIR = include
 CFLAGS = -G0 -Wall -O2
