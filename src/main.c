@@ -22,6 +22,11 @@ PSP_MAIN_THREAD_ATTR(0);
 #define USB_DRIVERNAME "UVC"
 #define USB_PRODUCT_ID 0x1337
 
+#define SCE_DMACPLUS_FORMAT_RGBA8888 0
+#define SCE_DMACPLUS_FORMAT_RGB565   1
+#define SCE_DMACPLUS_FORMAT_RGBA5551 2
+#define SCE_DMACPLUS_FORMAT_RGBA4444 3
+
 #define MAX_UVC_VIDEO_FRAME_SIZE	VIDEO_FRAME_SIZE_YUY2(480, 272)
 
 #define UVC_PAYLOAD_HEADER_SIZE		12
@@ -487,13 +492,13 @@ static void get_display_params_lcdc(void **addr, int *pixelformat, int *width, i
 	*width = *(volatile unsigned int *)0xBC800108;
 	*stride = *(volatile unsigned int *)0xBC80010C;
 
-	if (ldcd_pixelfmt == 0)
+	if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA8888)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_8888;
-	else if (ldcd_pixelfmt == 1)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGB565)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_565;
-	else if (ldcd_pixelfmt == 2)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA5551)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_5551;
-	else if (ldcd_pixelfmt == 3)
+	else if (ldcd_pixelfmt == SCE_DMACPLUS_FORMAT_RGBA4444)
 		*pixelformat = PSP_DISPLAY_PIXEL_FORMAT_4444;
 }
 
