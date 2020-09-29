@@ -22,6 +22,8 @@ PSP_MAIN_THREAD_ATTR(0);
 #define USB_DRIVERNAME "UVC"
 #define USB_PRODUCT_ID 0x1337
 
+#define EXIT_MASK (PSP_CTRL_START | PSP_CTRL_RTRIGGER)
+
 #define SCE_DMACPLUS_FORMAT_RGBA8888 0
 #define SCE_DMACPLUS_FORMAT_RGB565   1
 #define SCE_DMACPLUS_FORMAT_RGBA5551 2
@@ -590,7 +592,7 @@ int main(int argc, char *argv[])
 	while (run) {
 		SceCtrlData pad;
 		sceCtrlPeekBufferPositive(&pad, 1);
-		if (pad.Buttons & PSP_CTRL_START)
+		if ((pad.Buttons & EXIT_MASK) == EXIT_MASK)
 			run = 0;
 
 		sceDisplayWaitVblankStart();
