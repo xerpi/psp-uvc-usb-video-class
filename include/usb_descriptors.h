@@ -14,8 +14,9 @@
  * UVC Configurable options
  */
 
-#define CONTROL_INTERFACE 		0
-#define STREAM_INTERFACE		1
+#define DUMMY_INTERFACE			0
+#define CONTROL_INTERFACE 		1
+#define STREAM_INTERFACE		2
 
 #define INTERFACE_CTRL_ID		0
 #define INPUT_TERMINAL_ID		1
@@ -37,7 +38,7 @@ static
 unsigned char interface_association_descriptor[] = {
 	UVC_INTERFACE_ASSOCIATION_DESC_SIZE,		/* Descriptor Size: 8 */
 	UVC_INTERFACE_ASSOCIATION_DESCRIPTOR_TYPE,	/* Interface Association Descr Type: 11 */
-	0x00,						/* I/f number of first VideoControl i/f */
+	CONTROL_INTERFACE,				/* I/f number of first VideoControl i/f */
 	0x02,						/* Number of Video i/f */
 	USB_CLASS_VIDEO,				/* CC_VIDEO : Video i/f class code */
 	UVC_SC_VIDEO_INTERFACE_COLLECTION,		/* SC_VIDEO_INTERFACE_COLLECTION : Subclass code */
@@ -160,7 +161,7 @@ static
 struct SceUdcdInterface interface = {
 	.expectNumber		= -1,
 	.interfaceNumber	= 0,
-	.numInterfaces		= 2
+	.numInterfaces		= 3
 };
 
 #if 0
@@ -218,7 +219,21 @@ struct SceUdcdEndpointDescriptor endpdesc_hi[2] = {
 
 /* Hi-Speed interface descriptor */
 static
-struct SceUdcdInterfaceDescriptor interdesc_hi[3] = {
+struct SceUdcdInterfaceDescriptor interdesc_hi[4] = {
+	{	/* Dummy interface just to include the IAD */
+		USB_DT_INTERFACE_SIZE,
+		USB_DT_INTERFACE,
+		DUMMY_INTERFACE,                /* bInterfaceNumber */
+		0,                              /* bAlternateSetting */
+		0,                              /* bNumEndpoints */
+		USB_CLASS_VENDOR_SPEC,          /* bInterfaceClass */
+		0,                              /* bInterfaceSubClass */
+		0,                              /* bInterfaceProtocol */
+		0,                              /* iInterface */
+		NULL,                           /* endpoints */
+		(void *)&interface_association_descriptor,
+		sizeof(interface_association_descriptor)
+	},
 	{	/* Standard Video Control Interface Descriptor */
 		USB_DT_INTERFACE_SIZE,
 		USB_DT_INTERFACE,
@@ -255,9 +270,10 @@ struct SceUdcdInterfaceDescriptor interdesc_hi[3] = {
 
 /* Hi-Speed settings */
 static
-struct SceUdcdInterfaceSettings settings_hi[2] = {
+struct SceUdcdInterfaceSettings settings_hi[3] = {
 	{&interdesc_hi[0], 0, 1},
-	{&interdesc_hi[1], 0, 1}
+	{&interdesc_hi[1], 0, 1},
+	{&interdesc_hi[2], 0, 1}
 };
 
 /* Hi-Speed configuration descriptor */
@@ -265,11 +281,11 @@ static
 struct SceUdcdConfigDescriptor confdesc_hi = {
 	USB_DT_CONFIG_SIZE,
 	USB_DT_CONFIG,
-	(USB_DT_CONFIG_SIZE + 2 * USB_DT_INTERFACE_SIZE + 1 * USB_DT_ENDPOINT_SIZE +
-		/* sizeof(interface_association_descriptor) + */
+	(USB_DT_CONFIG_SIZE + 3 * USB_DT_INTERFACE_SIZE + 1 * USB_DT_ENDPOINT_SIZE +
+		sizeof(interface_association_descriptor) +
 		sizeof(video_control_descriptors) +
 		sizeof(video_streaming_descriptors)),	/* wTotalLength */
-	2,			/* bNumInterfaces */
+	3,			/* bNumInterfaces */
 	1,			/* bConfigurationValue */
 	0,			/* iConfiguration */
 	0x80,			/* bmAttributes */
@@ -324,7 +340,21 @@ struct SceUdcdEndpointDescriptor endpdesc_full[2] = {
 
 /* Full-Speed interface descriptor */
 static
-struct SceUdcdInterfaceDescriptor interdesc_full[3] = {
+struct SceUdcdInterfaceDescriptor interdesc_full[4] = {
+	{	/* Dummy interface just to include the IAD */
+		USB_DT_INTERFACE_SIZE,
+		USB_DT_INTERFACE,
+		DUMMY_INTERFACE,                /* bInterfaceNumber */
+		0,                              /* bAlternateSetting */
+		0,                              /* bNumEndpoints */
+		USB_CLASS_VENDOR_SPEC,          /* bInterfaceClass */
+		0,                              /* bInterfaceSubClass */
+		0,                              /* bInterfaceProtocol */
+		0,                              /* iInterface */
+		NULL,                           /* endpoints */
+		(void *)&interface_association_descriptor,
+		sizeof(interface_association_descriptor)
+	},
 	{	/* Standard Video Control Interface Descriptor */
 		USB_DT_INTERFACE_SIZE,
 		USB_DT_INTERFACE,
@@ -361,9 +391,10 @@ struct SceUdcdInterfaceDescriptor interdesc_full[3] = {
 
 /* Full-Speed settings */
 static
-struct SceUdcdInterfaceSettings settings_full[2] = {
+struct SceUdcdInterfaceSettings settings_full[3] = {
 	{&interdesc_full[0], 0, 1},
-	{&interdesc_full[1], 0, 1}
+	{&interdesc_full[1], 0, 1},
+	{&interdesc_full[2], 0, 1}
 };
 
 /* Full-Speed configuration descriptor */
@@ -371,16 +402,16 @@ static
 struct SceUdcdConfigDescriptor confdesc_full = {
 	USB_DT_CONFIG_SIZE,
 	USB_DT_CONFIG,
-	(USB_DT_CONFIG_SIZE + 2 * USB_DT_INTERFACE_SIZE + 1 * USB_DT_ENDPOINT_SIZE +
-		/* sizeof(interface_association_descriptor) + */
+	(USB_DT_CONFIG_SIZE + 3 * USB_DT_INTERFACE_SIZE + 1 * USB_DT_ENDPOINT_SIZE +
+		sizeof(interface_association_descriptor) +
 		sizeof(video_control_descriptors) +
 		sizeof(video_streaming_descriptors)),	/* wTotalLength */
-	2,			/* bNumInterfaces */
+	3,			/* bNumInterfaces */
 	1,			/* bConfigurationValue */
 	0,			/* iConfiguration */
 	0x80,			/* bmAttributes */
 	250,			/* bMaxPower */
-	&settings_full[0],
+	&settings_full[0]
 };
 
 /* Full-Speed configuration */
